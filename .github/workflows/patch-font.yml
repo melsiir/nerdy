@@ -1,37 +1,47 @@
-name: Patch Nerd Font
+name: Patch Nerd Fonts
 
 on:
   push:
     paths:
-      - '**.otf'
-      - '**.ttf'
-  workflow_dispatch:
+      - 'fonts/**'   # triggers when anything inside fonts/ changes
 
 jobs:
   patch:
     runs-on: ubuntu-latest
 
     steps:
+      # 1️⃣ Checkout repo
       - name: Checkout repo
         uses: actions/checkout@v3
 
+      # 2️⃣ Install dependencies
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y python3 python3-pip fontforge git
+          sudo apt install -y python3 python3-pip fontforge unzip curl
 
-      - name: Clone Nerd Fonts
-        run: git clone https://github.com/ryanoasis/nerd-fonts.git
-
-      - name: Patch font
+      # 3️⃣ Download and unzip FontPatcher
+      - name: Download FontPatcher
         run: |
-          python3 nerd-fonts/font-patcher SF-Mono-Medium.otf \
-          --complete \
-          --careful \
-          --adjust-line-height
+          curl -L -o FontPatcher.zip https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FontPatcher.zip
+          unzip -o FontPatcher.zip
+          chmod +x font-patcher
 
-      - name: Upload patched font
+      # 4️⃣ Patch all fonts in fonts/ folder
+      - name: Patch fonts
+        run: |
+          for f in fonts/*.{ttf,otf}; do
+            [ -f "$f" ] || continue
+            echo "Patching $f ..."
+            python3 font-patcher "$f" \
+              --complete \
+              --careful \
+              --adjust-line-height
+          done
+
+      # 5️⃣ Upload all patched fonts as artifact
+      - name: Upload patched fonts
         uses: actions/upload-artifact@v4
         with:
-          name: patched-font
+          name: patched-fonts
           path: '*Nerd Font*.ttf'
