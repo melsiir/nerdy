@@ -2,8 +2,8 @@ name: Patch Nerd Fonts
 
 on:
   push:
-    paths:
-      - 'fonts/**'   # triggers when anything inside fonts/ changes
+    # paths:
+    #   - 'fonts/**'   # triggers when anything inside fonts/ changes
 
 jobs:
   patch:
