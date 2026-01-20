@@ -35,38 +35,45 @@ jobs:
       - name: Patch and package font families
         run: |
           mkdir -p patched
+
           for family_dir in fonts/*/; do
             family_name=$(basename "$family_dir")
             echo "Processing family: $family_name"
 
-            mkdir -p "patched/$family_name"
+            workdir=$(mktemp -d)
+            outdir="patched/$family_name"
+            mkdir -p "$outdir"
 
-            # Patch fonts
-            for font_file in "$family_dir"*.[otfOTFttfTTF]; do
+            for font_file in "$family_dir"*.[oOtT][tTfF][fF]; do
               [ -f "$font_file" ] || continue
               echo "Patching $font_file ..."
-              python3 font-patcher "$font_file" \
+
+              cp "$font_file" "$workdir/"
+              pushd "$workdir" >/dev/null
+
+              python3 "$GITHUB_WORKSPACE/font-patcher" "$(basename "$font_file")" \
                 --complete \
                 --careful \
                 --adjust-line-height \
                 --mono
 
-              # Move patched outputs
-              mv *Nerd\ Font*.ttf *Nerd\ Font*.otf "patched/$family_name/" 2>/dev/null || true
+              # Move all patched outputs
+              mv *Nerd\ Font* "$GITHUB_WORKSPACE/$outdir/" || true
+
+              popd >/dev/null
             done
 
-            # Convert .otf → .ttf for Termux
-            for f in patched/$family_name/*.otf; do
+            # Convert OTF → TTF (Termux-safe)
+            for f in "$outdir"/*.otf; do
               [ -f "$f" ] || continue
-              ttf_file="${f%.otf}.ttf"
-              echo "Converting $f to $ttf_file"
-              fontforge -lang=ff -c "Open(\"$f\"); Generate(\"$ttf_file\")"
+              fontforge -lang=ff -c "Open(\"$f\"); Generate(\"${f%.otf}.ttf\")"
             done
 
-            # Zip the family
-            zip -r "patched/$family_name.zip" "patched/$family_name" > /dev/null
-          done
+            # Zip family
+            zip -r "patched/$family_name.zip" "$outdir" >/dev/null
 
+            rm -rf "$workdir"
+          done
       # 5️⃣ Create GitHub releases for each font family
       - name: Create releases per font family
         run: |
