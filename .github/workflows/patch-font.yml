@@ -44,45 +44,40 @@ jobs:
             echo "Processing family: $family_name"
 
             workdir=$(mktemp -d)
-            outdir="$GITHUB_WORKSPACE/patched/$family_name"
+            outdir="patched/$family_name"
             mkdir -p "$outdir"
 
             for font_file in "$family_dir"*.[oOtT][tTfF][fF]; do
               [ -f "$font_file" ] || continue
               echo "Patching $font_file"
 
+              original_name=$(basename "$font_file")
               cp "$font_file" "$workdir/"
               pushd "$workdir" >/dev/null
 
-              python3 "$GITHUB_WORKSPACE/font-patcher" "$(basename "$font_file")" \
+              python3 "$GITHUB_WORKSPACE/font-patcher" "$original_name" \
                 --complete \
                 --careful \
-                --adjust-line-height \
-                --mono
+                --adjust-line-height
 
-              generated=0
+              # Move ONLY patched outputs (exclude original)
               for f in *.otf *.ttf; do
-                [ "$f" = "$(basename "$font_file")" ] && continue
-                mv "$f" "$outdir/"
-                generated=1
+                [ "$f" = "$original_name" ] && continue
+                mv "$f" "$GITHUB_WORKSPACE/$outdir/"
               done
-
-              if [ "$generated" -eq 0 ]; then
-                echo "⚠️ No output generated for $(basename "$font_file")"
-              fi
 
               popd >/dev/null
             done
 
             echo "Final contents of $outdir:"
-            ls -lh "$outdir" || true
+            ls -lh "$outdir"
 
-            # Convert OTF → TTF (Termux-safe)
-            for f in "$outdir"/*.otf; do
-              fontforge -lang=ff -c "Open(\"$f\"); Generate(\"${f%.otf}.ttf\")"
-            done
+            # Zip with correct relative structure
+            (
+              cd patched
+              zip -r "$family_name.zip" "$family_name"
+            )
 
-            zip -r "patched/$family_name.zip" "$outdir"
             rm -rf "$workdir"
           done
       # 5️⃣ Create GitHub releases for each font family
