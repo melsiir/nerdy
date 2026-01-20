@@ -1,37 +1,92 @@
-name: Patch Nerd Font
+name: Patch Nerd Fonts Families & Release
 
 on:
   push:
-    paths:
-      - '**.otf'
-      - '**.ttf'
-  workflow_dispatch:
+    branches:
+      - main
+    # paths:
+    #   - 'fonts/**'
 
 jobs:
-  patch:
+  patch-and-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # needed to create releases
 
     steps:
-      - name: Checkout repo
+      # 1️⃣ Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v3
 
+      # 2️⃣ Install dependencies
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y python3 python3-pip fontforge git
+          sudo apt install -y python3 python3-pip fontforge python3-fontforge unzip curl zip gh jq
 
-      - name: Clone Nerd Fonts
-        run: git clone https://github.com/ryanoasis/nerd-fonts.git
-
-      - name: Patch font
+      # 3️⃣ Download FontPatcher.zip
+      - name: Download FontPatcher
         run: |
-          python3 nerd-fonts/font-patcher SF-Mono-Medium.otf \
-          --complete \
-          --careful \
-          --adjust-line-height
+          curl -L -o FontPatcher.zip https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FontPatcher.zip
+          unzip -o FontPatcher.zip
+          chmod +x font-patcher
 
-      - name: Upload patched font
-        uses: actions/upload-artifact@v3
+      # 4️⃣ Patch, convert, and zip each font family
+      - name: Patch and package font families
+        run: |
+          set -e
+          shopt -s nullglob
+
+          mkdir -p patched
+
+          for family_dir in fonts/*/; do
+            family_name=$(basename "$family_dir")
+            echo "Processing family: $family_name"
+
+            outdir="patched/$family_name"
+            mkdir -p "$outdir"
+
+            for font_file in "$family_dir"*.[oOtT][tTfF][fF]; do
+              [ -f "$font_file" ] || continue
+              echo "Patching $font_file"
+
+              python3 "$GITHUB_WORKSPACE/font-patcher" "$font_file" \
+                --complete \
+                --careful \
+                --adjust-line-height \
+                --outputdir "$outdir"
+            done
+
+            echo "Final contents of $outdir:"
+            ls -lh "$outdir"
+
+            (
+              cd patched
+              zip -r "$family_name.zip" "$family_name"
+            )
+          done
+      # 5️⃣ Create GitHub release
+      - name: Create GitHub release (single release, multiple zips)
+        uses: softprops/action-gh-release@v1
         with:
-          name: patched-font
-          path: '*Nerd Font*.ttf'
+          tag_name: nerdfonts-${{ github.sha }}
+          name: Nerd Fonts auto build
+          body: |
+            Automatically patched Nerd Fonts.
+          files: patched/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # delete old release
+      - name: Keep only last 2 releases
+        run: |
+          echo "Pruning old releases (keeping last 2)..."
+
+          releases=$(gh release list --limit 100 --json tagName,createdAt \
+            --jq 'sort_by(.createdAt) | reverse | .[2:] | .[].tagName')
+
+          for tag in $releases; do
+            echo "Deleting release: $tag"
+            gh release delete "$tag" --yes
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
