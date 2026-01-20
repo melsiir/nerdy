@@ -65,20 +65,17 @@ jobs:
               zip -r "$family_name.zip" "$family_name"
             )
           done
-      # 5️⃣ Create GitHub releases for each font family
-      - name: Create releases per font family
-        run: |
-          for zipfile in patched/*.zip; do
-            family_name=$(basename "$zipfile" .zip)
-            tag="nerdfont-${family_name}-${GITHUB_SHA::7}"
+      # 5️⃣ Create GitHub release
+      - name: Create GitHub release (single release, multiple zips)
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: nerdfonts-${{ github.sha }}
+          name: Nerd Fonts (auto build)
+          body: |
+            Automatically patched Nerd Fonts.
 
-            echo "Creating release for $family_name with tag $tag"
-
-            # Create release if it doesn't exist
-            gh release view "$tag" >/dev/null 2>&1 || \
-              gh release create "$tag" "$zipfile" \
-                --title "$family_name Nerd Font" \
-                --notes "Automatically generated Nerd Font patch for $family_name"
-          done
+            Included font families:
+            - All directories under `fonts/`
+          files: patched/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
