@@ -1,16 +1,22 @@
-name: Patch Nerd Fonts
+name: Patch Nerd Fonts Families & Release
 
 on:
   push:
-    # paths:
-    #   - 'fonts/**'   # triggers when anything inside fonts/ changes
+    branches:
+      - main        # only trigger on main branch
+    paths:
+      - 'fonts/**'  # any change in fonts folder triggers workflow
 
 jobs:
-  patch:
+  patch-and-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # needed to create releases
+      id-token: write
+      packages: write
 
     steps:
-      # 1️⃣ Checkout repo
+      # 1️⃣ Checkout repository
       - name: Checkout repo
         uses: actions/checkout@v3
 
@@ -18,32 +24,55 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y python3 python3-pip fontforge python3-fontforge unzip curl
+          sudo apt install -y python3 python3-pip fontforge python3-fontforge unzip curl zip jq
 
-      # 3️⃣ Download and unzip FontPatcher
+      # 3️⃣ Download FontPatcher.zip
       - name: Download FontPatcher
         run: |
           curl -L -o FontPatcher.zip https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FontPatcher.zip
           unzip -o FontPatcher.zip
           chmod +x font-patcher
 
-      # 4️⃣ Patch all fonts in fonts/ folder
-      - name: Patch fonts
+      # 4️⃣ Patch, convert, and zip each font family
+      - name: Patch and package font families
         run: |
           mkdir -p patched
-          for f in fonts/*.{ttf,otf}; do
-            [ -f "$f" ] || continue
-            echo "Patching $f ..."
-            python3 font-patcher "$f" \
-              --complete \
-              --careful \
-              --adjust-line-height
-            # Move all patched outputs to patched folder
-            mv *.ttf *.otf patched/ 2>/dev/null || true
+          for family_dir in fonts/*/; do
+            family_name=$(basename "$family_dir")
+            echo "Processing family: $family_name"
+
+            mkdir -p "patched/$family_name"
+
+            # Patch fonts
+            for font_file in "$family_dir"*.[otfOTFttfTTF]; do
+              [ -f "$font_file" ] || continue
+              echo "Patching $font_file ..."
+              python3 font-patcher "$font_file" \
+                --complete \
+                --careful \
+                --adjust-line-height \
+                --mono
+
+              # Move patched outputs
+              mv *Nerd\ Font*.ttf *Nerd\ Font*.otf "patched/$family_name/" 2>/dev/null || true
+            done
+
+            # Convert .otf → .ttf
+            for f in patched/$family_name/*.otf; do
+              [ -f "$f" ] || continue
+              ttf_file="${f%.otf}.ttf"
+              echo "Converting $f to $ttf_file"
+              fontforge -lang=ff -c "Open(\"$f\"); Generate(\"$ttf_file\")"
+            done
+
+            # Zip family
+            zip -r "patched/$family_name.zip" "patched/$family_name" > /dev/null
           done
-      # 5️⃣ Upload all patched fonts as artifact
-      - name: Upload patched fonts
-        uses: actions/upload-artifact@v4
+
+      # 5️⃣ Create a release for each family zip
+      - name: Create GitHub releases
+        uses: softprops/action-gh-release@v1
         with:
-          name: patched-fonts
-          path: patched/
+          files: patched/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
