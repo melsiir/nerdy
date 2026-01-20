@@ -35,6 +35,7 @@ jobs:
       - name: Patch and package font families
         run: |
           set -e
+          shopt -s nullglob
 
           mkdir -p patched
 
@@ -59,22 +60,25 @@ jobs:
                 --adjust-line-height \
                 --mono
 
-              # Move ALL generated font files except original
-              for f in *.ttf *.otf; do
-                if [ "$f" != "$(basename "$font_file")" ]; then
-                  mv "$f" "$outdir/"
-                fi
+              generated=0
+              for f in *.otf *.ttf; do
+                [ "$f" = "$(basename "$font_file")" ] && continue
+                mv "$f" "$outdir/"
+                generated=1
               done
+
+              if [ "$generated" -eq 0 ]; then
+                echo "⚠️ No output generated for $(basename "$font_file")"
+              fi
 
               popd >/dev/null
             done
 
-            echo "Contents of $outdir:"
-            ls -lh "$outdir"
+            echo "Final contents of $outdir:"
+            ls -lh "$outdir" || true
 
             # Convert OTF → TTF (Termux-safe)
             for f in "$outdir"/*.otf; do
-              [ -f "$f" ] || continue
               fontforge -lang=ff -c "Open(\"$f\"); Generate(\"${f%.otf}.ttf\")"
             done
 
